@@ -1,8 +1,6 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue';
-import axios from 'axios';
-
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue';
+import api from '../api';
 
 const portfolioData = ref({
   about: {
@@ -20,6 +18,23 @@ const highestZIndex = ref(10);
 // State penampung waktu real-time
 const currentTime = ref('');
 let timer = null;
+
+// State input pencarian di jendela Works
+const worksSearchQuery = ref('');
+
+// Filter daftar proyek berdasarkan input judul atau deskripsi
+const filteredWorks = computed(() => {
+  const list = portfolioData.value.all_projects || [];
+  if (!worksSearchQuery.value.trim()) {
+    return list;
+  }
+  const query = worksSearchQuery.value.toLowerCase();
+  return list.filter(
+    (item) =>
+      item.title.toLowerCase().includes(query) ||
+      (item.description && item.description.toLowerCase().includes(query))
+  );
+});
 
 // Fungsi memperbarui jam
 function updateClock() {
@@ -86,7 +101,7 @@ function centerWindows() {
 // Ambil bundle data dari Laravel API
 async function fetchPortfolioData() {
   try {
-    const response = await axios.get(`${API_BASE_URL}/portfolio-data`);
+    const response = await api.get('/portfolio-data');
     portfolioData.value = response.data;
   } catch (error) {
     console.error('Gagal mengambil data dari Laravel:', error);
@@ -241,16 +256,26 @@ onUnmounted(() => {
         @mousedown="bringToFront('works')"
       >
         <div class="window-header" @mousedown="startDrag('works', $event)">
-          <span>Works ({{ portfolioData.all_projects?.length || 0 }})</span>
+          <span>Works ({{ filteredWorks.length }})</span>
           <button class="close-btn" @click.stop="closeWindow('works')">✕</button>
         </div>
         <div class="window-content works-scroll">
+          <!-- Input Bar Pencarian Retro -->
+          <div class="works-search-wrap">
+            <input
+              v-model="worksSearchQuery"
+              type="text"
+              placeholder="> cari project..."
+              class="works-search-input"
+            />
+          </div>
+
           <div v-if="isLoading">
             <p>Memuat daftar project...</p>
           </div>
-          <div v-else-if="portfolioData.all_projects && portfolioData.all_projects.length > 0">
+          <div v-else-if="filteredWorks.length > 0">
             <div
-              v-for="item in portfolioData.all_projects"
+              v-for="item in filteredWorks"
               :key="item.id"
               class="works-item"
             >
@@ -270,7 +295,9 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else>
-            <p>Belum ada project.</p>
+            <p class="empty-search">
+              Tidak ada project yang cocok dengan "{{ worksSearchQuery }}".
+            </p>
           </div>
         </div>
       </div>
@@ -419,6 +446,33 @@ header {
   font-size: 13px;
   line-height: 1.5;
   color: #ccc;
+}
+
+/* Pencarian di Works */
+.works-search-wrap {
+  margin-bottom: 12px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 6px;
+}
+
+.works-search-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #64b5f6;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+}
+
+.works-search-input::placeholder {
+  color: #666;
+}
+
+.empty-search {
+  color: #777;
+  font-size: 12px;
+  margin-top: 8px;
 }
 
 .photo-content {
