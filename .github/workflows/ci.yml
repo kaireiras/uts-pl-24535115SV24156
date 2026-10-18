@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
@@ -7,11 +7,12 @@ on:
     branches: [ main, dev ]
 
 jobs:
+  # -------------------------------------------------------------
   # Job 1: Pengujian Backend (Laravel)
+  # -------------------------------------------------------------
   test-backend:
     name: Backend Test (Laravel)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,19 +32,22 @@ jobs:
         working-directory: ./backend
         run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
 
-      - name: Generate App Key
-        working-directory: ./backend
-        run: php artisan key:generate
-
+      # Menggunakan APP_KEY dan DB_PASSWORD dari GitHub Secrets
       - name: Execute Feature & Unit Tests
         working-directory: ./backend
+        env:
+          APP_KEY: ${{ secrets.APP_KEY }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
         run: php artisan test
 
-  # Job 2: Build Frontend (Vue 3)
+  # -------------------------------------------------------------
+  # Job 2: Build Frontend (Vue)
+  # -------------------------------------------------------------
   build-frontend:
     name: Frontend Build (Vue)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -62,3 +66,50 @@ jobs:
       - name: Build Application
         working-directory: ./frontend
         run: npm run build
+
+  # -------------------------------------------------------------
+  # Job 3: Deploy to GitHub Container Registry (ghcr.io)
+  # -------------------------------------------------------------
+  deploy:
+    name: Deploy Container Images
+    runs-on: ubuntu-latest
+    needs: [test-backend, build-frontend]
+    # Hanya berjalan saat push/merge ke branch main
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Mengubah nama repo ke lowercase (ghcr.io menolak nama image berhuruf kapital)
+      - name: Lowercase Repository Name
+        id: repo-name
+        run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build & Push Docker Image Backend (Tag commit SHA)
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      # Build & Push Docker Image Frontend (Tag commit SHA)
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
