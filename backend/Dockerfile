@@ -1,34 +1,28 @@
-FROM php:8.4-fpm-alpine
+FROM dunglas/frankenphp:1-php8.4-alpine
 
+# Cukup pasang pdo_mysql dan zip (hanya butuh hitungan detik, tanpa kompilasi C++ berat)
+RUN install-php-extensions \
+    pdo_mysql \
+    zip
 
-RUN apk add --no-cache \
-    libpng-dev \
-    libzip-dev \
-    zip \
-    unzip \
-    git \
-    curl \
-    sqlite-dev \
-    mysql-client
-
-RUN docker-php-ext-install pdo pdo_mysql pdo_sqlite gd zip
-
-# Ambil Composer resmi
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-WORKDIR /var/www
+WORKDIR /app
 
-# Salin composer dahulu untuk caching layer (Syarat Soal 5a)
+# Cache layer dependensi Composer
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 
-# Salin seluruh kode aplikasi
 COPY . .
 
-# Generate autoloader produksi
 RUN composer dump-autoload --optimize
 
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache \
+    && chmod -R 775 /app/storage /app/bootstrap/cache
 
-EXPOSE 9000
-CMD ["php-fpm"]
+ENV SERVER_NAME=":80"
+ENV CADDY_GLOBAL_OPTIONS="auto_https off"
+
+EXPOSE 80
+
+CMD ["frankenphp", "run", "--config", "/etc/caddy/Caddyfile"]
