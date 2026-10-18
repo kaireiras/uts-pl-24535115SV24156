@@ -1,0 +1,84 @@
+services:
+  # -----------------------------------------------------------
+  # 1. Service Basis Data (MySQL)
+  # -----------------------------------------------------------
+  database:
+    image: mysql:8.0
+    container_name: portfolio_database
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-portfolio_db}
+      MYSQL_USER: ${DB_USERNAME:-kaireiras_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret_db_password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-secret_root_password}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - portfolio-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -----------------------------------------------------------
+  # 2. Service Backend Laravel (FrankenPHP)
+  # -----------------------------------------------------------
+  # -----------------------------------------------------------
+  # 2. Service Backend Laravel (FrankenPHP)
+  # -----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: portfolio_backend
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    environment:
+      APP_NAME: "Kaireiras Portfolio"
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY}
+      DB_CONNECTION: mysql
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-portfolio_db}
+      DB_USERNAME: ${DB_USERNAME:-kaireiras_user}
+      DB_PASSWORD: ${DB_PASSWORD:-secret_db_password}
+      # Konfigurasi FrankenPHP mode standar (tanpa worker loop)
+      SERVER_NAME: ":80"
+      CADDY_GLOBAL_OPTIONS: "auto_https off"
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - portfolio-network
+
+  # -----------------------------------------------------------
+  # 3. Service Frontend (Vue 3 di Nginx)
+  # -----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: portfolio_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - portfolio-network
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  portfolio-network:
+    driver: bridge
